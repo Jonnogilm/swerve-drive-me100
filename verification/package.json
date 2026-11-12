@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "description": "ATmega328P emulation tests for OrboTruck",
+  "dependencies": { "avr8js": "0.21.0" }
+}
