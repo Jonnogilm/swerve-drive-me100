@@ -4,7 +4,7 @@
 namespace Config {
 // Set true ONLY after completing the guide's measurements and power checks.
 #ifndef ORBOTRUCK_HARDWARE_CONFIRMED
-#define ORBOTRUCK_HARDWARE_CONFIRMED false
+#define ORBOTRUCK_HARDWARE_CONFIRMED true
 #endif
 const bool HARDWARE_CONFIRMED = ORBOTRUCK_HARDWARE_CONFIRMED;
 const uint8_t DRIVER_ADDRESS = 0x26;
@@ -35,8 +35,10 @@ const float US_PER_DEGREE[4] = {5.55556f,5.55556f,5.55556f,5.55556f};
 const float MIN_ANGLE[4] = {-90,-90,-90,-90};
 const float MAX_ANGLE[4] = {90,90,90,90};
 
-const float DEMO_SPEED_MM_S = 60;
-const float MAX_WHEEL_SPEED_MM_S = 100;
+const float DEMO_SPEED_MM_S = 150;
+const float MAX_WHEEL_SPEED_MM_S = 500;
+const float TEST_SPEED_MM_S = 500; // individual drive tests; capped by maximum above
+const float TEST_DISTANCE_MM = 2500; // full ramp to 500 mm/s, then a short cruise
 const float ACCEL_MM_S2 = 80;
 const float STRAIGHT_MM = 200;
 const float SIDEWAYS_MM = 150;

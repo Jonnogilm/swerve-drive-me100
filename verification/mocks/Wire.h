@@ -2,6 +2,7 @@
 #include <stdint.h>
 struct MockWire {
   bool fail=false, timeout=false, shortRead=false, servoFail=false;
+  bool motorReadPending=false;
   uint8_t address=0, servoRegisters[256]={0};
   uint8_t reg=0, used=0, readIndex=0, tx[12], rx[2], lastSpeed[8];
   uint8_t configs=0;
@@ -15,7 +16,7 @@ struct MockWire {
   void beginTransmission(uint8_t a) { address=a; used=0; }
   void write(uint8_t b) { tx[used++]=b; }
   void write(const uint8_t *b,uint8_t n) { for(uint8_t i=0;i<n;i++) write(b[i]); }
-  uint8_t endTransmission() {
+  uint8_t endTransmission(bool sendStop=true) {
     if(fail || (address==0x40 && servoFail)) return 2;
     if(address==0x40) {
       reg=tx[0];
@@ -28,6 +29,9 @@ struct MockWire {
       }
       return 0;
     }
+    // Require the repeated-start register read used by Yahboom's example.
+    // The previous mock accepted STOP here, hiding a driver mismatch.
+    motorReadPending=(used==1 && !sendStop);
     reg=tx[0];
     if(used>1 && reg>=1 && reg<=5) configs|=1<<(reg-1);
     if(reg==6 && used==9) for(uint8_t i=0;i<4;i++) {
@@ -41,7 +45,8 @@ struct MockWire {
       if(fail || servoFail || shortRead) return 0;
       rx[0]=servoRegisters[reg]; readIndex=0; return size;
     }
-    if(fail) return 0;
+    if(fail || !motorReadPending) return 0;
+    motorReadPending=false;
     uint16_t v=0;
     if(reg>=0x20 && reg<=0x27) {
       uint32_t value=counts[(reg-0x20)/2]; v=(reg&1)?value:value>>16;

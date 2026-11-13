@@ -28,8 +28,18 @@ cmp OrboTruck/src/Steering/ServoBoard.h ServoCalibration/src/Steering/ServoBoard
 
 The adapter is included identically in both sketch folders so each remains
 self-contained in Arduino IDE builds. Keep both copies synchronized.
-The AVR firmware suite now contains 46 assertions; the locked suite still has 3.
+The AVR firmware suite now contains 49 assertions; the native HOST_TEST build has one additional assertion for the stall diagnostic output (50 total). The locked suite still has 3.
 Before uploading, verify both sketches using Arduino AVR Boards for Uno R3.
+
+## Encoder repeated-start correction
+
+Compared `YahboomDriver::read16` with `Arduino/IIC/bsp_motor_iic.cpp` in [Yahboom’s public code archive](https://drive.google.com/file/d/1eXUz93IUhEvy_z--nTjDqPhZ4SX54cfX/view), linked from the manufacturer tutorial. Their `i2cRead` uses `Wire.endTransmission(false)` before `Wire.requestFrom`; our adapter previously sent STOP. Updated the adapter to match. The mock now requires the combined register-selection/read transaction, and tests cover both rejected STOP-separated selection and successful repeated-start reading. This models the expected transaction, not a measured physical board response.
+
+Native firmware, locked-configuration, and calibration suites passed. Restoring the old STOP-based read in a temporary copy causes the firmware suite to fail (regression verified). No AVR build or physical motor test was available; whether this resolves the reported zero encoder readings requires a new upload and bench test.
+
+## Stall diagnostics update
+
+Native firmware and locked-configuration tests passed after adding stall details. Checks cover stopping all channels before diagnostic output, retaining the pre-stop commanded speed in that output, and a 500 mm/s individual test faulting before reaching its target when encoder counts remain frozen. The ordinary individual test still reaches 500 mm/s and completes with simulated encoder feedback. The lock suite is compiled with `-DORBOTRUCK_HARDWARE_CONFIRMED=false` because the local hardware configuration has already been enabled by the user. No new AVR build or physical hardware test was performed.
 
 ## Results, 12 November 2026
 
@@ -71,6 +81,6 @@ npm install
 ./run-tests.ps1 -AvrBin 'C:/path/to/avr-toolchain/bin'
 ```
 
-Expected assertion totals for the updated suites: **46** and **3**, with empty failed arrays. The helper writes intermediate AVR test binaries under verification/build. These are tests, not files to upload to the truck.
+Expected assertion totals for the updated AVR suites: **49** and **3**, with empty failed arrays. The helper writes intermediate AVR test binaries under verification/build. These are tests, not files to upload to the truck.
 
 No physical truck, servo, motor, driver, or battery was tested. Use README.md's staged commissioning procedure before powered operation.

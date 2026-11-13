@@ -26,7 +26,9 @@ public:
   bool read16(uint8_t reg, uint16_t &value) {
     Wire.clearWireTimeoutFlag();
     Wire.beginTransmission(Config::DRIVER_ADDRESS); Wire.write(reg);
-    uint8_t result = Wire.endTransmission();
+    // Match Yahboom's i2cRead: keep register selection and read in one
+    // transaction using a repeated START, without an intervening STOP.
+    uint8_t result = Wire.endTransmission(false);
     if (!healthy() || result) return false;
     uint8_t count = Wire.requestFrom(Config::DRIVER_ADDRESS, (uint8_t)2);
     if (!healthy() || count != 2) { while(Wire.available()) Wire.read(); return false; }

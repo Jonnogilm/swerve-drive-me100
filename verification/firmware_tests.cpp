@@ -65,12 +65,22 @@ int main() {
   check(Wire.lastSpeed[0]==0 && Wire.lastSpeed[1]==200 && Wire.lastSpeed[4]==255 && Wire.lastSpeed[5]==56);
   Wire.counts[0]=0xFFFF8001UL; uint32_t count=0;
   check(driver.encoder(0,count) && count==0xFFFF8001UL);
+  Wire.beginTransmission(Config::DRIVER_ADDRESS); Wire.write(0x21);
+  Wire.endTransmission();
+  check(Wire.requestFrom(Config::DRIVER_ADDRESS,(uint8_t)2)==0);
+  uint16_t low=0;
+  check(driver.read16(0x21,low) && low==0x8001);
   driver.configureStep(3);
   check(Wire.tx[0]==5 && Wire.tx[1]==0 && Wire.tx[2]==0 && Wire.tx[3]==0x86 && Wire.tx[4]==0x42);
   clearState(); arm(); send("TESTFL");
   check(attached && Wire.servoRegisters[9]==1 && Wire.servoRegisters[21]==1);
-  for(uint16_t n=0;n<200 && state!=READY && state!=FAULT;n++) simulationTick();
-  check(state==READY && Wire.counts[0]>0 && Wire.counts[1]==0 && Wire.counts[2]==0 && Wire.counts[3]==0);
+  float testPeak=0;
+  for(uint16_t n=0;n<400 && state!=READY && state!=FAULT;n++) {
+    simulationTick();
+    testPeak=fmaxf(testPeak,Wire.motor[0]);
+  }
+  check(state==READY && near(testPeak,fminf(Config::TEST_SPEED_MM_S,Config::MAX_WHEEL_SPEED_MM_S)) &&
+        Wire.counts[0]>0 && Wire.counts[1]==0 && Wire.counts[2]==0 && Wire.counts[3]==0);
   clearState(); arm(); send("START");
   check(state==SETTLING && Wire.motor[0]==0);
   for(uint16_t n=0;n<4000 && state!=READY && state!=FAULT;n++) simulationTick();
@@ -81,7 +91,20 @@ int main() {
   arm(); send("FORWARD");
   for(uint8_t n=0;n<100 && state!=FAULT;n++) simulationTick(false);
   check(state==FAULT); // stalled wheel
+#ifdef HOST_TEST
+  check(Serial.output.find("driver=M1")!=std::string::npos &&
+        Serial.output.find("Command mm/s=150")!=std::string::npos &&
+        Wire.motor[0]==0 && Wire.motor[1]==0 && Wire.motor[2]==0 && Wire.motor[3]==0);
+#endif
   send("CONFIRM"); check(state==FAULT); // fault stays latched
+  // A 500 mm/s target cannot bypass a frozen encoder during the slow ramp.
+  clearState(); arm(); send("TESTFL");
+  float stalledPeak=0;
+  for(uint16_t n=0;n<200 && state!=FAULT;n++) {
+    simulationTick(false);
+    stalledPeak=fmaxf(stalledPeak,fabsf(commanded[0]));
+  }
+  check(state==FAULT && stalledPeak>0 && stalledPeak<Config::TEST_SPEED_MM_S && Wire.motor[0]==0);
   clearState(); arm(); send("FORWARD"); Wire.fail=true; fakeTime+=1000; loop();
   check(state==FAULT);
   Wire.fail=false; fakeTime+=300; loop(); check(state==FAULT && Wire.motor[0]==0);

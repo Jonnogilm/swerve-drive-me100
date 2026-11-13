@@ -27,7 +27,7 @@ bool validConfiguration() {
   using namespace Config;
   if(!HARDWARE_CONFIRMED || WHEEL_DIAMETER_MM<=0 || WHEELBASE_MM<=0 || TRACK_MM<=0 ||
      COUNTS_PER_WHEEL_REV<=0 || MAX_WHEEL_SPEED_MM_S<=0 || MAX_WHEEL_SPEED_MM_S>1000 ||
-     DEMO_SPEED_MM_S<=0 || ACCEL_MM_S2<=0 || ORBIT_RADIUS_MM<=0 || SPIN_RAD_S<=0 ||
+     DEMO_SPEED_MM_S<=0 || TEST_SPEED_MM_S<=0 || TEST_DISTANCE_MM<=0 || ACCEL_MM_S2<=0 || ORBIT_RADIUS_MM<=0 || SPIN_RAD_S<=0 ||
      STRAIGHT_MM<=0 || SIDEWAYS_MM<=0 || DIAGONAL_MM<=0 || GEAR_RATIO==0 || ENCODER_LINES==0 ||
      MOTOR_DEADZONE>3600 || POSITION_TOLERANCE_MM<=0) return false;
   if(SERVO_ADDRESS<0x40 || SERVO_ADDRESS>0x77 || SERVO_ADDRESS==DRIVER_ADDRESS ||
@@ -57,6 +57,21 @@ void fault(const __FlashStringHelper *reason) {
   driver.stop(); // bounded, best effort; cut motor power if unreachable
   Serial.print(F("FAULT: ")); Serial.println(reason);
 }
+void stallFault(uint8_t i, uint32_t count, int32_t delta, uint32_t now) {
+  // Save the command before fault() clears it. Stop before printing diagnostics.
+  float speed=commanded[i];
+  uint32_t quietMs=now-lastMotion[i];
+  fault(F("Wheel stalled / encoder not advancing"));
+  Serial.print(F("Wheel=")); Serial.print(i);
+  Serial.print(F(" (0 FL,1 FR,2 RL,3 RR), driver=M")); Serial.println(Config::CHANNEL[i]+1);
+  Serial.print(F("Command mm/s=")); Serial.print(speed,1);
+  Serial.print(F(" target=")); Serial.print(wheel[i].speed,1);
+  Serial.print(F(" no progress ms=")); Serial.println(quietMs);
+  Serial.print(F("Raw encoder=")); Serial.print((int32_t)count);
+  Serial.print(F(" last delta=")); Serial.print(delta);
+  Serial.print(F(" progress mm=")); Serial.println(travelled[i],1);
+  Serial.println(F("If wheel turned: check encoder wiring/mapping and ENCODERS before/after test."));
+}
 void stopNow() {
   bool wasFault=state==FAULT;
   sequence=false;
@@ -71,8 +86,8 @@ bool buildDemo(uint8_t demo) {
     uint8_t selected=demo-7;
     if(selected>=4) return false;
     for(uint8_t i=0;i<4;i++) {
-      wheel[i]={0,i==selected?fminf(20,MAX_WHEEL_SPEED_MM_S):0};
-      goal[i]=i==selected?40:0;
+      wheel[i]={0,i==selected?fminf(TEST_SPEED_MM_S,MAX_WHEEL_SPEED_MM_S):0};
+      goal[i]=i==selected?TEST_DISTANCE_MM:0;
     }
     return true;
   }
@@ -199,7 +214,7 @@ void controlTick(uint32_t now) {
       // Acceleration scales with each wheel's final speed to preserve ratios.
       target=wheel[i].speed;
       if(along>0.05f || fabsf(commanded[i])<MIN_MOVING_MM_S) lastMotion[i]=now;
-      if(now-lastMotion[i]>STALL_MS) { fault(F("Wheel stalled / encoder not advancing")); return; }
+      if(now-lastMotion[i]>STALL_MS) { stallFault(i,count,delta,now); return; }
     }
     float step=peak>0 ? ACCEL_MM_S2*TICK_MS/1000.0f*fabsf(wheel[i].speed)/peak : 0;
     commanded[i]=Motion::approach(commanded[i],target,step);
