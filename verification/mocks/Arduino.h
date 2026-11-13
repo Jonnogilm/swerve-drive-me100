@@ -7,6 +7,7 @@ typedef char __FlashStringHelper;
 #define constrain(x,a,b) ((x)<(a)?(a):((x)>(b)?(b):(x)))
 extern uint32_t fakeTime;
 inline uint32_t millis() { return fakeTime; }
+inline void delay(unsigned long ms) { fakeTime+=ms; }
 struct MockSerial {
   const char *incoming=nullptr;
   void begin(unsigned long) {}

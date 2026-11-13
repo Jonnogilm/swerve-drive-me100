@@ -48,6 +48,11 @@ int main() {
   check(near(Motion::approach(0,10,4),4) && near(Motion::approach(9,10,4),10));
   check(validConfiguration());
   setup(); check(state==LOCKED && Wire.motor[0]==0 && !attached);
+  check(Wire.servoRegisters[0xFD]==0x10 && Wire.servoRegisters[0xFE]==121);
+  check(servo.pulse(3,1500) && Wire.servoRegisters[0x14]==0x33 && Wire.servoRegisters[0x15]==1);
+  check(!servo.pulse(16,1500) && !servo.pulse(0,0));
+  Wire.servoFail=true; send("CONFIRM"); check(state==FAULT && Wire.motor[0]==0);
+  Wire.servoFail=false; clearState();
   send("START"); check(state==LOCKED);
   arm(); check(state==READY && Wire.configs==31);
   for(uint8_t d=0;d<7;d++) check(buildDemo(d));
@@ -63,6 +68,7 @@ int main() {
   driver.configureStep(3);
   check(Wire.tx[0]==5 && Wire.tx[1]==0 && Wire.tx[2]==0 && Wire.tx[3]==0x86 && Wire.tx[4]==0x42);
   clearState(); arm(); send("TESTFL");
+  check(attached && Wire.servoRegisters[9]==1 && Wire.servoRegisters[21]==1);
   for(uint16_t n=0;n<200 && state!=READY && state!=FAULT;n++) simulationTick();
   check(state==READY && Wire.counts[0]>0 && Wire.counts[1]==0 && Wire.counts[2]==0 && Wire.counts[3]==0);
   clearState(); arm(); send("START");
@@ -90,6 +96,16 @@ int main() {
   clearState(); Serial.incoming="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXSTART\n";
   pollSerial(); pollSerial(); check(state==LOCKED && inputLength==0);
   Serial.incoming="STATUS\r\n"; pollSerial(); check(inputLength==0);
+  clearState(); arm(); Wire.servoFail=true; send("FORWARD");
+  check(state==FAULT && Wire.motor[0]==0 && !attached);
+  Wire.servoFail=false; clearState(); Wire.servoFail=true; setup();
+  check(state==FAULT && Wire.motor[0]==0);
+  Wire.servoFail=false;
   testDone=1;
+#ifdef HOST_TEST
+  for(uint8_t i=0;i<testCount;i++) if(testResults[i]!=1) return i+1;
+  return 0;
+#else
   for(;;) {}
+#endif
 }

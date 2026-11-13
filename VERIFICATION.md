@@ -1,5 +1,36 @@
 # Verification
 
+## Inland KS0065 update
+
+The build sizes and AVR emulator results below describe the earlier direct-GPIO
+servo version; they have **not** been re-established for the Inland update.
+No AVR compiler or Arduino CLI is installed in the current Linux workspace.
+The updated firmware, shipped lock checks, and new calibration tests passed
+with native g++ and mock peripherals. This checks control flow and PCA9685
+register transactions, not AVR compatibility, electrical operation, or mechanics.
+
+New checks cover disabled outputs on startup, prescale and microsecond conversion,
+invalid channels/pulses, missing servo board at boot and arming, failed steering
+writes preventing motion, calibration OFF clearing old pulses, and calibration
+faults remaining latched until reset.
+
+From the repository root, reproduce the native checks (each command must exit 0):
+
+```sh
+g++ -std=c++11 -DHOST_TEST -Iverification/mocks verification/firmware_tests.cpp -o /tmp/orbo-firmware-tests
+/tmp/orbo-firmware-tests
+g++ -std=c++11 -DHOST_TEST -Iverification/mocks verification/locked_tests.cpp -o /tmp/orbo-locked-tests
+/tmp/orbo-locked-tests
+g++ -std=c++11 -Iverification/mocks verification/calibration_tests.cpp -o /tmp/orbo-calibration-tests
+/tmp/orbo-calibration-tests
+cmp OrboTruck/src/Steering/ServoBoard.h ServoCalibration/src/Steering/ServoBoard.h
+```
+
+The adapter is included identically in both sketch folders so each remains
+self-contained in Arduino IDE builds. Keep both copies synchronized.
+The AVR firmware suite now contains 46 assertions; the locked suite still has 3.
+Before uploading, verify both sketches using Arduino AVR Boards for Uno R3.
+
 ## Results, 12 November 2026
 
 | Check | Result |
@@ -40,6 +71,6 @@ npm install
 ./run-tests.ps1 -AvrBin 'C:/path/to/avr-toolchain/bin'
 ```
 
-Expected assertion totals: **39** and **3**, with empty failed arrays. The helper writes intermediate AVR test binaries under verification/build. These are tests, not files to upload to the truck.
+Expected assertion totals for the updated suites: **46** and **3**, with empty failed arrays. The helper writes intermediate AVR test binaries under verification/build. These are tests, not files to upload to the truck.
 
 No physical truck, servo, motor, driver, or battery was tested. Use README.md's staged commissioning procedure before powered operation.

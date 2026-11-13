@@ -19,7 +19,10 @@ const float COUNTS_PER_WHEEL_REV = 1320.0f;
 const uint16_t MOTOR_DEADZONE = 1900; // Yahboom Uno example; tune unloaded
 
 // Logical order: front-left, front-right, rear-left, rear-right.
-const uint8_t SERVO_PIN[4] = {4,5,6,7};
+const uint8_t SERVO_ADDRESS = 0x40; // Inland KS0065/PCA9685, address jumpers open
+const uint8_t SERVO_CHANNEL[4] = {0,1,2,3}; // board outputs FL,FR,RL,RR
+const uint16_t SERVO_FREQUENCY_HZ = 50;
+const uint32_t SERVO_OSCILLATOR_HZ = 25000000UL; // nominal; calibrate if needed
 const uint8_t CHANNEL[4] = {0,2,1,3}; // zero based: M1,M3,M2,M4
 const int8_t MOTOR_SIGN[4] = {1,1,1,1}; // must be calibrated
 const int8_t ENCODER_SIGN[4] = {1,1,1,1}; // independently calibrated

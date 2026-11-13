@@ -1,19 +1,20 @@
-/* OrboTruck - Arduino Uno R3, Servo + Wire only.
+/* OrboTruck - Arduino Uno R3, Wire only; Inland KS0065 steering.
    Read ../README.md BEFORE connecting power. Configuration ships locked.
    Serial: 115200 baud, newline. STOP is a software stop, not a power disconnect.
 */
 #include <Arduino.h>
-#include <Servo.h>
 #include <ctype.h>
 #include <string.h>
 #include "Config.h"
 #include "Motion.h"
 #include "YahboomDriver.h"
+#include "src/Steering/ServoBoard.h"
 
 enum State : uint8_t { LOCKED, READY, CONFIGURING, SETTLING, RUNNING, PAUSING, FAULT };
 enum Demo : uint8_t { FORWARD, BACKWARD, LEFT, RIGHT, DIAGONAL, SPIN, ORBIT };
 State state=LOCKED;
-Servo servo[4]; YahboomDriver driver;
+ServoBoard servo(Config::SERVO_ADDRESS,Config::SERVO_OSCILLATOR_HZ);
+YahboomDriver driver;
 Motion::Wheel wheel[4];
 float commanded[4]={0,0,0,0}, travelled[4], goal[4];
 uint32_t lastCount[4], lastMotion[4];
@@ -29,10 +30,15 @@ bool validConfiguration() {
      DEMO_SPEED_MM_S<=0 || ACCEL_MM_S2<=0 || ORBIT_RADIUS_MM<=0 || SPIN_RAD_S<=0 ||
      STRAIGHT_MM<=0 || SIDEWAYS_MM<=0 || DIAGONAL_MM<=0 || GEAR_RATIO==0 || ENCODER_LINES==0 ||
      MOTOR_DEADZONE>3600 || POSITION_TOLERANCE_MM<=0) return false;
-  uint8_t mask=0;
+  if(SERVO_ADDRESS<0x40 || SERVO_ADDRESS>0x77 || SERVO_ADDRESS==DRIVER_ADDRESS ||
+     SERVO_FREQUENCY_HZ<40 || SERVO_FREQUENCY_HZ>100) return false;
+  uint8_t mask=0; uint16_t servoMask=0;
   for(uint8_t i=0;i<4;i++) {
     if(CHANNEL[i]>3 || (mask & (1<<CHANNEL[i]))) return false;
     mask|=1<<CHANNEL[i];
+    if(SERVO_CHANNEL[i]>15 || (servoMask & (1U<<SERVO_CHANNEL[i]))) return false;
+    servoMask|=1U<<SERVO_CHANNEL[i];
+    if(SERVO_MIN_US[i]<500 || SERVO_MAX_US[i]>2500) return false;
     if(abs(MOTOR_SIGN[i])!=1 || abs(ENCODER_SIGN[i])!=1 || abs(SERVO_SIGN[i])!=1 ||
        US_PER_DEGREE[i]<=0 || MIN_ANGLE[i]>0 || MAX_ANGLE[i]<0 ||
        MIN_ANGLE[i]<-180 || MAX_ANGLE[i]>180 || MIN_ANGLE[i]>=MAX_ANGLE[i] ||
@@ -101,16 +107,15 @@ void startSegment() {
   uint8_t demo=sequence?sequenceIndex:selectedDemo;
   if(!buildDemo(demo)) { fault(F("Steering angle unreachable; check travel/linkage")); return; }
   if(!driver.stop()) { fault(F("I2C stop before steering")); return; }
-  if(!attached) {
-    for(uint8_t i=0;i<4;i++) { servo[i].attach(Config::SERVO_PIN[i],Config::SERVO_MIN_US[i],Config::SERVO_MAX_US[i]); }
-    attached=true;
-  }
   for(uint8_t i=0;i<4;i++) {
     commanded[i]=0;
     int pulse=lroundf(Config::SERVO_CENTER_US[i]+Config::SERVO_SIGN[i]*Config::US_PER_DEGREE[i]*wheel[i].angle);
     pulse=constrain(pulse,Config::SERVO_MIN_US[i],Config::SERVO_MAX_US[i]);
-    servo[i].writeMicroseconds(pulse);
+    if(!servo.pulse(Config::SERVO_CHANNEL[i],pulse)) {
+      fault(F("Steering write failed; disconnect power")); return;
+    }
   }
+  attached=true;
   state=SETTLING; since=millis();
   Serial.print(F("Segment ")); Serial.println(demo);
 }
@@ -145,6 +150,8 @@ void command() {
     if(state!=LOCKED) { Serial.println(F("CONFIRM only while locked; faults require reset.")); return; }
     if(!validConfiguration()) { Serial.println(F("Configuration locked/invalid. Read Config.h and guide.")); return; }
     if(!driver.stop()) { fault(F("Driver unavailable")); return; }
+    if(!servo.begin(Config::SERVO_FREQUENCY_HZ)) { fault(F("Servo board unavailable/configuration failed")); return; }
+    attached=false;
     state=CONFIGURING; configStep=0; since=millis(); return;
   }
   if(!strcmp(input,"START")) { startRun(true,0); return; }
@@ -208,7 +215,10 @@ void setup() {
   Serial.begin(115200); driver.begin();
   for(uint8_t i=0;i<4;i++) wheel[i]={0,0};
   Serial.println(F("OrboTruck Uno R3. Locked. Read guide, then CONFIRM. HELP for commands."));
-  if(!driver.stop()) fault(F("Boot stop failed; driver absent or bus error"));
+  bool stopped=driver.stop();
+  bool disabled=servo.begin(Config::SERVO_FREQUENCY_HZ);
+  if(!stopped) fault(F("Boot stop failed; driver absent or bus error"));
+  else if(!disabled) fault(F("Servo board absent/configuration failed"));
 }
 void loop() {
   pollSerial(); uint32_t now=millis();

@@ -17,5 +17,10 @@ int main() {
   strcpy(input,"START"); command();
   testResults[testCount++]=state==LOCKED && Wire.motor[0]==0?1:2;
   testDone=1;
+#ifdef HOST_TEST
+  for(uint8_t i=0;i<testCount;i++) if(testResults[i]!=1) return i+1;
+  return 0;
+#else
   for(;;) {}
+#endif
 }
