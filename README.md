@@ -101,11 +101,18 @@ After servo calibration, disconnect the servo supply before uploading OrboTruck 
 | `SPIN` | Estimate one counterclockwise rotation about chassis center |
 | `ORBIT` | Estimate one counterclockwise circle around a point initially ahead, facing inward |
 | `TESTFL`, `TESTFR`, `TESTRL`, `TESTRR` | One-wheel straight commissioning test |
+| `TESTM1` | M1 only: steering 0° → 180° → 0°, drive 0% → 50% → 0%, once |
 | `HELP` or unknown command | Print command list |
 
 Commands are case-insensitive. Avoid leading/trailing spaces. Overlong commands are discarded. A running demo cannot be replaced by another motion command; use STOP, CONFIRM, then the next command. After normal completion, the sketch remains ready for another explicit command. It never repeats automatically.
 
 Edit Config.h for distances, radius, speed, acceleration, steering-settle time, pause time, stall limit, and segment timeout. Default demo speed is 150 mm/s, individual test speed is 500 mm/s over 2500 mm, maximum wheel speed 500 mm/s, and acceleration of the fastest wheel is 80 mm/s². The individual tests take about 6.25 seconds to ramp from zero to 500 mm/s, then cruise for about 1.9 seconds before stopping; completion and STOP command an immediate stop rather than a deceleration ramp. Each segment has a 120-second timeout. A very large/slower orbit may need a longer timeout. The program preserves wheel-speed ratios while ramping up and uniformly scales commands exceeding the speed limit. At completion, individual wheels approach zero or receive a final immediate zero-speed command; this is not a precision trajectory planner with coordinated braking.
+
+### Motor 1 sweep test
+
+Upload OrboTruck, open Serial Monitor at 115200 baud with Newline, send `CONFIRM`, wait for `Ready`, then send `TESTM1`. With the chassis supported, M1 (front-left by default) moves to 0° at zero drive speed and waits the configured steering-settle delay. It then sweeps to 180° over 10 seconds while linearly increasing wheel surface speed to 50% of `MAX_WHEEL_SPEED_MM_S` (250 mm/s by default), and returns to 0° over 10 seconds while linearly decreasing speed to zero. It runs once and stops. `STOP` interrupts and disarms immediately.
+
+These are servo-style angles: 0° / 90° / 180° correspond to the firmware's -90° / 0° / +90° wheel angles; 90° is straight ahead. STATUS continues to show signed wheel angles. The test requires calibrated limits covering -90° to +90° and rejects narrower travel. It does not widen configured limits. Other drive channels remain zero and other steering outputs are disabled, including any positions held by a previous test. The M1 servo holds its final position afterward. Encoder stall, direction, I²C, and timeout protections remain active. Speed percentage means commanded linear speed, not PWM duty cycle or measured percentage of the motor's physical top speed. Change `M1_SWEEP_HALF_MS` in Config.h to adjust each leg's duration; the requested acceleration must fit `ACCEL_MM_S2`.
 
 ### Diagnosing a stall fault
 

@@ -124,6 +124,39 @@ int main() {
   Wire.servoFail=false; clearState(); Wire.servoFail=true; setup();
   check(state==FAULT && Wire.motor[0]==0);
   Wire.servoFail=false;
+  clearState(); send("TESTM1"); check(state==LOCKED);
+  arm(); send("TESTM1");
+  check(state==SETTLING && near(wheel[sweepWheel].angle,-90) && Wire.motor[0]==0);
+  bool isolated=true, linear=true;
+  float sweepPeak=0, anglePeak=-90;
+  for(uint16_t n=0;n<500 && state!=READY && state!=FAULT;n++) {
+    simulationTick();
+    for(uint8_t ch=1;ch<4;ch++) if(Wire.motor[ch]!=0) isolated=false;
+    for(uint8_t j=0;j<4;j++) if(j!=sweepWheel &&
+      Wire.servoRegisters[0x09+4*Config::SERVO_CHANNEL[j]]!=0x10) isolated=false;
+    if(state==RUNNING) {
+      float elapsed=fakeTime-segmentStart;
+      float f=elapsed<=Config::M1_SWEEP_HALF_MS ? elapsed/Config::M1_SWEEP_HALF_MS :
+        2-elapsed/Config::M1_SWEEP_HALF_MS;
+      if(!near(commanded[sweepWheel],250*f) || !near(wheel[sweepWheel].angle,-90+180*f)) linear=false;
+      sweepPeak=fmaxf(sweepPeak,commanded[sweepWheel]);
+      anglePeak=fmaxf(anglePeak,wheel[sweepWheel].angle);
+    }
+  }
+  check(isolated && linear && near(sweepPeak,250) && near(anglePeak,90));
+  check(state==READY && near(wheel[sweepWheel].angle,-90) && Wire.motor[0]==0);
+  send("TESTM1"); send("STOP"); check(state==LOCKED && Wire.motor[0]==0);
+  arm(); send("TESTM1");
+  for(uint8_t n=0;n<60;n++) simulationTick();
+  send("STOP"); check(state==LOCKED && Wire.motor[0]==0);
+  arm(); send("TESTM1");
+  for(uint8_t n=0;n<120 && state!=FAULT;n++) simulationTick(false);
+  check(state==FAULT && Wire.motor[0]==0);
+  clearState(); arm(); send("TESTM1");
+  for(uint8_t n=0;n<60;n++) simulationTick();
+  Wire.servoFail=true; simulationTick();
+  check(state==FAULT && Wire.motor[0]==0);
+  Wire.servoFail=false;
   testDone=1;
 #ifdef HOST_TEST
   for(uint8_t i=0;i<testCount;i++) if(testResults[i]!=1) return i+1;

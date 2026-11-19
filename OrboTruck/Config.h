@@ -39,6 +39,7 @@ const float DEMO_SPEED_MM_S = 150;
 const float MAX_WHEEL_SPEED_MM_S = 500;
 const float TEST_SPEED_MM_S = 500; // individual drive tests; capped by maximum above
 const float TEST_DISTANCE_MM = 2500; // full ramp to 500 mm/s, then a short cruise
+const uint32_t M1_SWEEP_HALF_MS = 10000UL; // TESTM1: 10 s out, 10 s back; peak 50% of max speed
 const float ACCEL_MM_S2 = 80;
 const float STRAIGHT_MM = 200;
 const float SIDEWAYS_MM = 150;

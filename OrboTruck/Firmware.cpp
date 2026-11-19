@@ -21,6 +21,8 @@ uint32_t lastCount[4], lastMotion[4];
 uint32_t since=0, segmentStart=0, lastTick=0, lastHeartbeat=0;
 uint8_t sequenceIndex=0, selectedDemo=0, configStep=0;
 bool sequence=false, attached=false;
+const uint8_t M1_SWEEP=11;
+uint8_t sweepWheel=0;
 char input[48]; uint8_t inputLength=0; bool overflow=false;
 
 bool validConfiguration() {
@@ -82,6 +84,15 @@ void stopNow() {
 }
 bool buildDemo(uint8_t demo) {
   using namespace Config;
+  if(demo==M1_SWEEP) {
+    for(uint8_t i=0;i<4;i++) if(CHANNEL[i]==0) sweepWheel=i;
+    if(MIN_ANGLE[sweepWheel]>-90 || MAX_ANGLE[sweepWheel]<90 ||
+       M1_SWEEP_HALF_MS<1000 || M1_SWEEP_HALF_MS>SEGMENT_TIMEOUT_MS/2 ||
+       MAX_WHEEL_SPEED_MM_S*0.5f/(M1_SWEEP_HALF_MS/1000.0f)>ACCEL_MM_S2) return false;
+    for(uint8_t i=0;i<4;i++) { wheel[i].speed=0; goal[i]=0; }
+    wheel[sweepWheel].angle=-90;
+    return true;
+  }
   if(demo>=7) {
     uint8_t selected=demo-7;
     if(selected>=4) return false;
@@ -122,8 +133,10 @@ void startSegment() {
   uint8_t demo=sequence?sequenceIndex:selectedDemo;
   if(!buildDemo(demo)) { fault(F("Steering angle unreachable; check travel/linkage")); return; }
   if(!driver.stop()) { fault(F("I2C stop before steering")); return; }
+  if(demo==M1_SWEEP && !servo.off()) { fault(F("Disable other steering outputs failed")); return; }
   for(uint8_t i=0;i<4;i++) {
     commanded[i]=0;
+    if(demo==M1_SWEEP && i!=sweepWheel) continue;
     int pulse=lroundf(Config::SERVO_CENTER_US[i]+Config::SERVO_SIGN[i]*Config::US_PER_DEGREE[i]*wheel[i].angle);
     pulse=constrain(pulse,Config::SERVO_MIN_US[i],Config::SERVO_MAX_US[i]);
     if(!servo.pulse(Config::SERVO_CHANNEL[i],pulse)) {
@@ -170,11 +183,12 @@ void command() {
     state=CONFIGURING; configStep=0; since=millis(); return;
   }
   if(!strcmp(input,"START")) { startRun(true,0); return; }
+  if(!strcmp(input,"TESTM1")) { startRun(false,M1_SWEEP); return; }
   const char *names[]={"FORWARD","BACKWARD","LEFT","RIGHT","DIAGONAL","SPIN","ORBIT"};
   for(uint8_t i=0;i<7;i++) if(!strcmp(input,names[i])) { startRun(false,i); return; }
   const char *tests[]={"TESTFL","TESTFR","TESTRL","TESTRR"};
   for(uint8_t i=0;i<4;i++) if(!strcmp(input,tests[i])) { startRun(false,i+7); return; }
-  Serial.println(F("CONFIRM START STOP STATUS ENCODERS FORWARD BACKWARD LEFT RIGHT DIAGONAL SPIN ORBIT TESTFL TESTFR TESTRL TESTRR"));
+  Serial.println(F("CONFIRM START STOP STATUS ENCODERS FORWARD BACKWARD LEFT RIGHT DIAGONAL SPIN ORBIT TESTFL TESTFR TESTRL TESTRR TESTM1"));
 }
 void pollSerial() {
   // Bounded work per loop; a continuous serial stream cannot starve motor service.
@@ -190,9 +204,38 @@ void pollSerial() {
     }
   }
 }
+void sweepTick(uint32_t now) {
+  using namespace Config;
+  uint8_t i=sweepWheel;
+  uint32_t elapsed=now-segmentStart;
+  uint32_t count;
+  if(!driver.encoder(CHANNEL[i],count)) { fault(F("Encoder I2C read failed")); return; }
+  int32_t delta=Motion::countDelta(count,lastCount[i]); lastCount[i]=count;
+  float mm=(float)delta*ENCODER_SIGN[i]*(Motion::PI_F*WHEEL_DIAMETER_MM/COUNTS_PER_WHEEL_REV);
+  if(fabsf(mm)>MAX_WHEEL_SPEED_MM_S*0.05f*4+5 || mm < -3) {
+    fault(F("Implausible/wrong-direction encoder")); return;
+  }
+  travelled[i]+=mm;
+  if(mm>0.05f || commanded[i]<MIN_MOVING_MM_S) lastMotion[i]=now;
+  if(now-lastMotion[i]>STALL_MS) { stallFault(i,count,delta,now); return; }
+  float fraction=elapsed>=2*M1_SWEEP_HALF_MS ? 0 :
+    (elapsed<=M1_SWEEP_HALF_MS ? (float)elapsed/M1_SWEEP_HALF_MS :
+     (float)(2*M1_SWEEP_HALF_MS-elapsed)/M1_SWEEP_HALF_MS);
+  wheel[i].angle=-90+180*fraction;
+  wheel[i].speed=commanded[i]=MAX_WHEEL_SPEED_MM_S*0.5f*fraction;
+  int pulse=lroundf(SERVO_CENTER_US[i]+SERVO_SIGN[i]*US_PER_DEGREE[i]*wheel[i].angle);
+  pulse=constrain(pulse,SERVO_MIN_US[i],SERVO_MAX_US[i]);
+  if(!servo.pulse(SERVO_CHANNEL[i],pulse)) { fault(F("Steering write failed; disconnect power")); return; }
+  if(elapsed>=2*M1_SWEEP_HALF_MS) {
+    if(!driver.stop()) { fault(F("End-of-sweep stop failed")); return; }
+    state=PAUSING; since=millis(); return;
+  }
+  if(!driver.speeds(commanded)) fault(F("Motor command failed; disconnect power"));
+}
 void controlTick(uint32_t now) {
   using namespace Config;
   if(now-segmentStart>SEGMENT_TIMEOUT_MS) { fault(F("Segment timeout")); return; }
+  if(!sequence && selectedDemo==M1_SWEEP) { sweepTick(now); return; }
   bool done=true;
   float peak=0;
   for(uint8_t i=0;i<4;i++) peak=fmaxf(peak,fabsf(wheel[i].speed));

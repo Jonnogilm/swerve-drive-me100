@@ -1,5 +1,19 @@
 # Verification
 
+## Motor 1 sweep, 16 November 2026
+
+Added `TESTM1` coverage for locked starts, initial steering at zero drive speed,
+linear outbound/return angle and speed commands, 180-degree/50-percent peaks,
+other motors stopped and other servo outputs disabled, one-shot completion,
+STOP during settling and running, frozen encoders, and a steering-write failure
+while driving. Native WSL g++ firmware (58 assertions), locked-configuration,
+and calibration suites passed. `git diff --check` passed.
+
+Arduino CLI compiled OrboTruck for `arduino:avr:uno` using the installed toolchain:
+17,412 / 32,256 bytes flash and 927 / 2,048 bytes static RAM. No upload or physical
+motor test was performed. The sweep's 0–180-degree labels correspond to calibrated
+-90 to +90 wheel angles, and speed percentage uses the configured linear-speed maximum.
+
 ## Inland KS0065 update
 
 The build sizes and AVR emulator results below describe the earlier direct-GPIO
